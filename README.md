@@ -1,5 +1,9 @@
 # Guage — AI Usage, Quotas & Running Sessions Monitor
 
+<p align="center">
+  <img src="docs/images/screenshot-overview-bars.png" alt="Guage Overview - Detailed Bars View" width="340" />
+</p>
+
 A modern, ultra-lightweight, cross-platform desktop widget, terminal CLI, and **Model Context Protocol (MCP) Server** for monitoring real-time quotas, rolling 5-hour session limits, weekly caps, countdown reset timers, model badges, and active running agent sessions across **Claude Code**, **OpenAI Codex**, **Google Antigravity**, and **OpenCode**.
 
 ---
@@ -39,6 +43,21 @@ A modern, ultra-lightweight, cross-platform desktop widget, terminal CLI, and **
 - **Used vs. Remaining Toggle**: Switch anytime between remaining quota and used quota.
 - **24h Trend Sparkline**: Visualizes remaining quota trajectory and local daily token consumption.
 - **System Tray Integration**: Minimize to tray, global shortcuts, always-on-top toggle, and position memory.
+
+---
+
+## Screenshots & Gallery
+
+| Detailed Bars View | Circular Rings View |
+| :---: | :---: |
+| <img src="docs/images/screenshot-overview-bars.png" alt="Guage Overview - Detailed Bars View" width="340" /> | <img src="docs/images/screenshot-rings-mode.png" alt="Guage - Circular Rings View" width="340" /> |
+| **Single Provider Focus (Claude)** | **Mini Dock View** |
+| <img src="docs/images/screenshot-single-provider.png" alt="Guage - Single Provider Focus" width="340" /> | <img src="docs/images/screenshot-mini-dock.png" alt="Guage - Mini Dock View" width="340" /> |
+
+<p align="center">
+  <b>Terminal CLI Monitor (<code>guage status</code>)</b><br>
+  <img src="docs/images/screenshot-terminal-cli.png" alt="Guage CLI - guage status" width="680" />
+</p>
 
 ---
 
