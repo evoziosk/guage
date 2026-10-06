@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guage"
+version = "0.1.0"
+description = "Lightweight cross-platform AI quota & session usage monitor (Claude, Codex, Antigravity, OpenCode)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyside6-essentials>=6.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[project.scripts]
+guage = "src.cli:main"
+ai-widget = "src.main:main"
+ai-widget-cli = "src.cli:cli_status"
+ai-widget-mcp = "src.mcp_server:main"
+ai-limits = "src.cli:cli_limits"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

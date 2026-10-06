@@ -1,0 +1,11 @@
+{
+  "mcp": {
+    "modelpulse": {
+      "command": "python",
+      "args": [
+        "-m",
+        "src.mcp_server"
+      ]
+    }
+  }
+}
