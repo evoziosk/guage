@@ -91,7 +91,15 @@ class AIUsageWidget(QtWidgets.QWidget):
         self.tick_timer.timeout.connect(self._on_tick)
         self.tick_timer.start(1000)
 
-        self.setWindowOpacity(self.settings.opacity)
+    def _set_opacity(self, opacity: float) -> None:
+        """Safely apply opacity without triggering Wayland plugin errors on Linux/WSL."""
+        if QtGui.QGuiApplication.platformName() not in ("wayland",):
+            try:
+                self.setWindowOpacity(opacity)
+            except Exception:
+                pass
+
+        self._set_opacity(self.settings.opacity)
 
     def _on_tick(self) -> None:
         self._cycle_tick += 1
@@ -224,12 +232,12 @@ class AIUsageWidget(QtWidgets.QWidget):
         return 100.0 - remaining if self.settings.show_used else remaining
 
     def enterEvent(self, event) -> None:
-        self.setWindowOpacity(self.settings.opacity)
+        self._set_opacity(self.settings.opacity)
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
         if self.settings.fade_when_idle and not self._is_dragging:
-            self.setWindowOpacity(min(self.settings.opacity, self.settings.idle_opacity))
+            self._set_opacity(min(self.settings.opacity, self.settings.idle_opacity))
         super().leaveEvent(event)
 
     def cycle_provider(self, provider_id: Optional[str] = None) -> None:
@@ -452,7 +460,7 @@ class AIUsageWidget(QtWidgets.QWidget):
             self.settings.fade_when_idle = not self.settings.fade_when_idle
             self.settings.save()
             if not self.settings.fade_when_idle:
-                self.setWindowOpacity(self.settings.opacity)
+                self._set_opacity(self.settings.opacity)
 
         fade_action.triggered.connect(_toggle_fade)
 
