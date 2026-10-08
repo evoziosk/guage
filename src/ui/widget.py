@@ -99,7 +99,7 @@ class AIUsageWidget(QtWidgets.QWidget):
             except Exception:
                 pass
 
-        self._set_opacity(self.settings.opacity)
+
 
     def _on_tick(self) -> None:
         self._cycle_tick += 1
