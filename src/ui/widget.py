@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -22,6 +23,7 @@ from src.config import WidgetSettings
 from src.insights import InsightEngine, best_provider, PROVIDER_LABELS
 from src.models import ActiveSession, AggregatedUsage, ProviderUsage, UsageWindow, format_reset_label
 from src.ui.styles import ProviderTheme, UITheme
+from src.ui.wallpaper import WindowsWallpaperMode
 
 
 @dataclass
@@ -53,6 +55,7 @@ class AIUsageWidget(QtWidgets.QWidget):
         self.usage: AggregatedUsage = self.aggregator.get_latest()
         self._data_signal.connect(self._apply_new_data, Qt.ConnectionType.QueuedConnection)
         self._refresh_done_signal.connect(self._finish_manual_refresh, Qt.ConnectionType.QueuedConnection)
+        self._wallpaper_mode = WindowsWallpaperMode()
 
         # Frameless always-on-top window
         self.setWindowFlags(
@@ -75,6 +78,7 @@ class AIUsageWidget(QtWidgets.QWidget):
         self._drag_pos: Optional[QPoint] = None
         self._is_dragging = False
         self._is_refreshing = False
+        self._expanded_view_mode = "rings" if self.view_mode == "mini" else self.view_mode
 
         self._cycle_tick = 0
         self._last_session_check = 0.0
@@ -91,6 +95,9 @@ class AIUsageWidget(QtWidgets.QWidget):
         self.tick_timer.timeout.connect(self._on_tick)
         self.tick_timer.start(1000)
 
+        self._wallpaper_watch_timer = QTimer(self)
+        self._wallpaper_watch_timer.timeout.connect(self._check_wallpaper_host)
+
     def _set_opacity(self, opacity: float) -> None:
         """Safely apply opacity without triggering Wayland plugin errors on Linux/WSL."""
         if QtGui.QGuiApplication.platformName() not in ("wayland",):
@@ -98,8 +105,6 @@ class AIUsageWidget(QtWidgets.QWidget):
                 self.setWindowOpacity(opacity)
             except Exception:
                 pass
-
-        self._set_opacity(self.settings.opacity)
 
     def _on_tick(self) -> None:
         self._cycle_tick += 1
@@ -167,9 +172,9 @@ class AIUsageWidget(QtWidgets.QWidget):
         sparkline_bottom = sparkline_rect.bottom()
 
         divider_y = sparkline_bottom + 16.0
-        footer_text_rect = QRectF(26.0, divider_y + 8.0, w - 100.0, 20.0)
-        footer_dot_center = QPointF(w - 64.0, divider_y + 18.0)
-        footer_status_rect = QRectF(w - 56.0, divider_y + 8.0, 40.0, 20.0)
+        footer_text_rect = QRectF(26.0, divider_y + 8.0, w - 132.0, 20.0)
+        footer_dot_center = QPointF(w - 92.0, divider_y + 18.0)
+        footer_status_rect = QRectF(w - 84.0, divider_y + 8.0, 28.0, 20.0)
         total_height = int(divider_y + 36.0)
 
         return BarsLayout(
@@ -214,12 +219,54 @@ class AIUsageWidget(QtWidgets.QWidget):
     def toggle_mode(self) -> None:
         self.set_view_mode("bars" if self.view_mode == "rings" else "rings")
 
+    def toggle_mini_mode(self) -> None:
+        if self.view_mode == "mini":
+            self.set_view_mode(self._expanded_view_mode)
+        else:
+            self._expanded_view_mode = self.view_mode
+            self.set_view_mode("mini")
+
     def set_view_mode(self, mode: str) -> None:
+        bottom = self.y() + self.height()
         self.view_mode = mode
         self.settings.compact_mode = (mode != "bars")
         self.settings.view_mode = mode
         self.settings.save()
         self._update_geometry()
+        self.move(self.x(), bottom - self.height())
+
+    def set_always_on_top(self, enabled: bool) -> None:
+        self.settings.always_on_top = enabled
+        self.settings.save()
+        if not self._wallpaper_mode.active:
+            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, enabled)
+            self.show()
+
+    def toggle_wallpaper_mode(self) -> None:
+        if self._wallpaper_mode.active:
+            ok, message = self._wallpaper_mode.disable(self.settings.always_on_top)
+            if not self._wallpaper_mode.active:
+                self._wallpaper_watch_timer.stop()
+                if ok:
+                    self.move(self.settings.pos_x, self.settings.pos_y)
+        else:
+            ok, message = self._wallpaper_mode.enable(int(self.winId()))
+            if ok:
+                self._wallpaper_watch_timer.start(3000)
+        if message:
+            QtWidgets.QMessageBox.warning(self, "Wallpaper mode", message)
+        self.update()
+
+    def _check_wallpaper_host(self) -> None:
+        if self._wallpaper_mode.active and not self._wallpaper_mode.host_is_alive():
+            ok, _ = self._wallpaper_mode.disable(self.settings.always_on_top)
+            if not ok and self._wallpaper_mode.active:
+                return
+            self._wallpaper_watch_timer.stop()
+            self.move(self.settings.pos_x, self.settings.pos_y)
+            if self.alert_callback:
+                self.alert_callback("Wallpaper mode ended", "The Windows desktop host changed; the widget returned to normal mode.")
+            self.update()
 
     def toggle_style(self) -> None:
         """Switch between 'remaining' and 'used' presentation."""
@@ -312,7 +359,12 @@ class AIUsageWidget(QtWidgets.QWidget):
 
     def _get_toggle_rect(self, w: float) -> QRectF:
         """Return rect for view mode toggle icon button."""
+        if self.view_mode == "mini":
+            return QRectF(w / 2 - 11, self.height() - 21, 22, 16)
         return QRectF(w - 38, 17, 22, 22)
+
+    def _get_minimize_rect(self, w: float) -> QRectF:
+        return QRectF(w - 38, self.height() - 22, 22, 16)
 
     def _get_active_session_rects(self, w: float) -> List[Tuple[QRectF, ActiveSession]]:
         """Return (rect, session) for all rendered active session bars in bars mode."""
@@ -326,9 +378,17 @@ class AIUsageWidget(QtWidgets.QWidget):
             pos = event.position()
             w = self.width()
 
+            if self.view_mode != "mini" and self._get_minimize_rect(w).contains(pos):
+                self.toggle_mini_mode()
+                event.accept()
+                return
+
             # Check if clicked on view mode toggle icon
             if self._get_toggle_rect(w).contains(pos):
-                self.toggle_mode()
+                if self.view_mode == "mini":
+                    self.toggle_mini_mode()
+                else:
+                    self.toggle_mode()
                 event.accept()
                 return
 
@@ -348,6 +408,11 @@ class AIUsageWidget(QtWidgets.QWidget):
                         self.cycle_provider(s.provider_id)
                     event.accept()
                     return
+
+            # Keep the desktop-attached widget in place; right-click can always exit the mode.
+            if self._wallpaper_mode.active:
+                event.accept()
+                return
 
             # Start native Wayland / Windows system move
             handle = self.windowHandle()
@@ -371,11 +436,14 @@ class AIUsageWidget(QtWidgets.QWidget):
         session_rects = self._get_active_session_rects(w)
         is_clickable = (
             self._get_toggle_rect(w).contains(pos)
+            or (self.view_mode != "mini" and self._get_minimize_rect(w).contains(pos))
             or any(rect.contains(pos) for _, _, rect in self._get_tab_rects(w))
             or any(s_rect.contains(pos) for s_rect, _ in session_rects)
         )
         if is_clickable:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
+        elif self._wallpaper_mode.active:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
         else:
             self.setCursor(Qt.CursorShape.SizeAllCursor)
 
@@ -419,9 +487,10 @@ class AIUsageWidget(QtWidgets.QWidget):
 
     def moveEvent(self, event: QtGui.QMoveEvent) -> None:
         super().moveEvent(event)
-        self.settings.pos_x = self.x()
-        self.settings.pos_y = self.y()
-        self.settings.save()
+        if not self._wallpaper_mode.active:
+            self.settings.pos_x = self.x()
+            self.settings.pos_y = self.y()
+            self.settings.save()
 
     def _show_context_menu(self, global_pos: QPoint) -> None:
         menu = QtWidgets.QMenu(self)
@@ -448,6 +517,16 @@ class AIUsageWidget(QtWidgets.QWidget):
             act.setCheckable(True)
             act.setChecked(self.view_mode == mode)
             act.triggered.connect(lambda checked=False, m=mode: self.set_view_mode(m))
+
+        mini_action = menu.addAction("Expand from compact strip" if self.view_mode == "mini" else "Minimize to compact strip")
+        mini_action.triggered.connect(self.toggle_mini_mode)
+
+        wallpaper_action = menu.addAction("Wallpaper mode (experimental)")
+        wallpaper_action.setCheckable(True)
+        wallpaper_action.setChecked(self._wallpaper_mode.active)
+        wallpaper_action.setEnabled(sys.platform == "win32")
+        wallpaper_action.setToolTip("Attach behind desktop icons; Explorer updates may end the mode.")
+        wallpaper_action.toggled.connect(lambda checked: self.toggle_wallpaper_mode() if checked != self._wallpaper_mode.active else None)
 
         style_action = menu.addAction("Show Used % instead" if not self.settings.show_used else "Show Remaining % instead")
         style_action.triggered.connect(self.toggle_style)
@@ -523,13 +602,7 @@ class AIUsageWidget(QtWidgets.QWidget):
         top_action.setCheckable(True)
         top_action.setChecked(self.settings.always_on_top)
 
-        def _toggle_top():
-            self.settings.always_on_top = not self.settings.always_on_top
-            self.settings.save()
-            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self.settings.always_on_top)
-            self.show()
-
-        top_action.triggered.connect(_toggle_top)
+        top_action.toggled.connect(self.set_always_on_top)
 
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
@@ -792,7 +865,8 @@ class AIUsageWidget(QtWidgets.QWidget):
 
         # 2. Header (Logo + Brand + Tabs + Mode Toggle)
         title, _, rows = self._get_provider_rows()
-        self._paint_header(p, w, title, theme)
+        if self.view_mode != "mini":
+            self._paint_header(p, w, title, theme)
 
         # 3. Content View (Bars vs Rings from image.png)
         if self.view_mode == "bars":
@@ -959,6 +1033,17 @@ class AIUsageWidget(QtWidgets.QWidget):
                 p.setBrush(QBrush(color))
                 p.drawRoundedRect(QRectF(26, bar_y, fill_w, bar_h), bar_h / 2, bar_h / 2)
 
+            # Thin weekly allowance track immediately below the 5-hour track.
+            if weekly_pct is not None:
+                week_y = bar_y + bar_h + 2.0
+                week_h = 2.5
+                p.setBrush(QBrush(theme.progress_track))
+                p.drawRoundedRect(QRectF(26, week_y, bar_w, week_h), 1.25, 1.25)
+                week_fill = max(0.0, min(bar_w, self._disp(weekly_pct) / 100.0 * bar_w))
+                if week_fill > 0:
+                    p.setBrush(QBrush(row_accent))
+                    p.drawRoundedRect(QRectF(26, week_y, week_fill, week_h), 1.25, 1.25)
+
         layout = self._get_bars_layout(w)
 
         # Active Sessions live section (separate bars or cycled bar)
@@ -982,6 +1067,7 @@ class AIUsageWidget(QtWidgets.QWidget):
             if hint:
                 upd_text += f"  |  {hint}"
         p.drawText(layout.footer_text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, upd_text)
+        self._paint_minimize_button(p, w, h, theme)
 
         # Right dot + time
         p.setPen(Qt.PenStyle.NoPen)
@@ -1218,50 +1304,50 @@ class AIUsageWidget(QtWidgets.QWidget):
             p.drawText(QRectF(x0, top, width, height), Qt.AlignmentFlag.AlignCenter, "Collecting history...")
 
     def _paint_mini_view(self, p: QPainter, w: float, h: float, rows, theme: ProviderTheme) -> None:
-        """Ultra compact view: one line per row (name, thin bar, percentage, reset)."""
-        n = len(rows)
-        start_y = 56 if n > 3 else 64
-        gap = 26 if n > 3 else 34
-        for i, (_, r_title, _, remaining_pct, reset_str, severity, weekly_pct, r_color) in enumerate(rows):
-            y = start_y + i * gap
-            row_accent = r_color or theme.accent_color
-            if remaining_pct <= 10.0 or severity == "critical":
-                color = UITheme.CRITICAL_ACCENT
-            elif remaining_pct <= 25.0 or severity == "warning":
-                color = UITheme.WARNING_ACCENT
-            else:
-                color = row_accent
+        """Shallow strip showing the selected provider (or tightest quota in All)."""
+        if not rows:
+            return
+        row = rows[0] if self.active_provider != "all" else min(rows, key=lambda item: item[3])
+        _, r_title, _, remaining_pct, reset_str, severity, weekly_pct, r_color = row
+        row_accent = r_color or theme.accent_color
+        color = UITheme.CRITICAL_ACCENT if remaining_pct <= 10.0 or severity == "critical" else (
+            UITheme.WARNING_ACCENT if remaining_pct <= 25.0 or severity == "warning" else row_accent
+        )
+        p.setFont(QFont("Segoe UI", 9.5, QFont.Weight.Bold))
+        p.setPen(QPen(theme.text_white))
+        p.drawText(QRectF(20, 7, 150, 20), Qt.AlignmentFlag.AlignVCenter, r_title)
+        p.setFont(QFont("Segoe UI", 8.5))
+        p.setPen(QPen(theme.text_muted))
+        p.drawText(QRectF(172, 7, 150, 20), Qt.AlignmentFlag.AlignVCenter, reset_str.replace("Reset ", "").strip())
+        p.setFont(QFont("Segoe UI", 9.5, QFont.Weight.Bold))
+        p.setPen(QPen(color))
+        p.drawText(QRectF(w - 86, 7, 48, 20), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, f"{int(self._disp(remaining_pct))}%")
 
-            p.setFont(QFont("Segoe UI", 8.5 if n > 3 else 9.5, QFont.Weight.Bold))
-            p.setPen(QPen(theme.text_white))
-            p.drawText(QRectF(24, y, 110, 20), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, r_title)
-
-            # Miniature live indicator dot
-            row_pid = ("claude", "codex", "antigravity", "opencode")[i] if (self.active_provider == "all" and i < len(rows)) else self.active_provider
-            if self.settings.show_active_sessions and row_pid:
-                s_active = self.usage.get_active_sessions(row_pid)
-                if s_active:
-                    p.setBrush(QBrush(row_accent))
-                    p.setPen(Qt.PenStyle.NoPen)
-                    p.drawEllipse(QPointF(14, y + 10), 2.5, 2.5)
-
-            bar_x, bar_w = 138.0, w - 138.0 - 150.0
+        bar_x, bar_w = 20.0, w - 40.0
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(theme.progress_track))
+        p.drawRoundedRect(QRectF(bar_x, 34, bar_w, 6), 3, 3)
+        fill = max(0.0, min(bar_w, self._disp(remaining_pct) / 100.0 * bar_w))
+        if fill:
+            p.setBrush(QBrush(color))
+            p.drawRoundedRect(QRectF(bar_x, 34, fill, 6), 3, 3)
+        if weekly_pct is not None:
             p.setBrush(QBrush(theme.progress_track))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(QRectF(bar_x, y + 7, bar_w, 6), 3, 3)
-            fill = max(0.0, min(bar_w, self._disp(remaining_pct) / 100.0 * bar_w))
-            if fill > 0:
-                p.setBrush(QBrush(color))
-                p.drawRoundedRect(QRectF(bar_x, y + 7, fill, 6), 3, 3)
+            p.drawRoundedRect(QRectF(bar_x, 43, bar_w, 2.5), 1.25, 1.25)
+            weekly_fill = max(0.0, min(bar_w, self._disp(weekly_pct) / 100.0 * bar_w))
+            if weekly_fill:
+                p.setBrush(QBrush(row_accent))
+                p.drawRoundedRect(QRectF(bar_x, 43, weekly_fill, 2.5), 1.25, 1.25)
+        self._paint_minimize_button(p, w, h, theme)
 
-            p.setFont(QFont("Segoe UI", 9.5 if n > 3 else 10, QFont.Weight.Bold))
-            p.setPen(QPen(color))
-            p.drawText(QRectF(w - 144, y, 44, 20), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, f"{int(self._disp(remaining_pct))}%")
-
-            p.setFont(QFont("Segoe UI", 8))
-            p.setPen(QPen(theme.text_muted))
-            clean = reset_str.replace("Reset ", "").strip()
-            p.drawText(QRectF(w - 96, y, 74, 20), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, clean)
+    def _paint_minimize_button(self, p: QPainter, w: float, h: float, theme: ProviderTheme) -> None:
+        rect = self._get_toggle_rect(w) if self.view_mode == "mini" else self._get_minimize_rect(w)
+        p.setBrush(QBrush(QColor(255, 255, 255, 12)))
+        p.setPen(QPen(theme.border_color, 1))
+        p.drawRoundedRect(rect, 3, 3)
+        p.setPen(QPen(theme.text_muted))
+        p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "↑" if self.view_mode == "mini" else "⌄")
 
     def _paint_rings_view(self, p: QPainter, w: float, h: float, rows: List[Tuple[str, str, str, float, str, str, Optional[float], Optional[QColor]]], theme: ProviderTheme) -> None:
         """Bottom card design from image.png with circular gauges."""
@@ -1279,6 +1365,18 @@ class AIUsageWidget(QtWidgets.QWidget):
             row_accent = r_color or theme.accent_color
 
             ring_rect = QRectF(cx - circle_r, cy - circle_r, circle_r * 2, circle_r * 2)
+
+            # Weekly quota is a thinner inner ring, independent of the 5-hour dial.
+            if weekly_pct is not None:
+                weekly_r = circle_r - ring_stroke - 3.0
+                weekly_rect = QRectF(cx - weekly_r, cy - weekly_r, weekly_r * 2, weekly_r * 2)
+                p.setPen(QPen(theme.progress_track, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(weekly_rect)
+                weekly_span = -int((self._disp(weekly_pct) / 100.0) * 360 * 16)
+                if weekly_span:
+                    p.setPen(QPen(row_accent, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                    p.drawArc(weekly_rect, 90 * 16, weekly_span)
 
             # Track Circle
             p.setPen(QPen(theme.progress_track, ring_stroke, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
@@ -1345,7 +1443,8 @@ class AIUsageWidget(QtWidgets.QWidget):
                 if all_active:
                     n_act = len(all_active)
                     upd_text = f"● {n_act} active session{'s' if n_act > 1 else ''}  |  {upd_text}"
-        p.drawText(QRectF(16, h - 25, w - 32, 16), Qt.AlignmentFlag.AlignCenter, upd_text)
+        p.drawText(QRectF(16, h - 25, w - 60, 16), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, upd_text)
+        self._paint_minimize_button(p, w, h, theme)
 
     def _paint_row_icon(self, p: QPainter, x: float, y: float, icon_type: str, severity: str, color: Optional[QColor] = None) -> None:
         """Draw clean vector icons in brand accent color."""

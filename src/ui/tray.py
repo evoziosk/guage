@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Optional
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -88,6 +89,18 @@ def build_app_menu(widget: AIUsageWidget, toggle_cb, parent: Optional[QtWidgets.
         act = v_menu.addAction(label)
         act.triggered.connect(lambda checked=False, m=mode: widget.set_view_mode(m))
 
+    mini_action = menu.addAction("Expand from compact strip" if widget.view_mode == "mini" else "Minimize to compact strip")
+    mini_action.triggered.connect(widget.toggle_mini_mode)
+
+    wallpaper_action = menu.addAction("Wallpaper mode (experimental)")
+    wallpaper_action.setCheckable(True)
+    wallpaper_action.setChecked(widget._wallpaper_mode.active)
+    wallpaper_action.setEnabled(sys.platform == "win32")
+    wallpaper_action.setToolTip("Attach behind desktop icons; Explorer updates may end the mode.")
+    wallpaper_action.toggled.connect(
+        lambda checked: widget.toggle_wallpaper_mode() if checked != widget._wallpaper_mode.active else None
+    )
+
     menu.addAction("Toggle Used / Remaining %").triggered.connect(widget.toggle_style)
 
     # Active Sessions submenu
@@ -121,13 +134,7 @@ def build_app_menu(widget: AIUsageWidget, toggle_cb, parent: Optional[QtWidgets.
     top_action.setCheckable(True)
     top_action.setChecked(widget.settings.always_on_top)
 
-    def _toggle_top():
-        widget.settings.always_on_top = not widget.settings.always_on_top
-        widget.settings.save()
-        widget.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, widget.settings.always_on_top)
-        widget.show()
-
-    top_action.triggered.connect(_toggle_top)
+    top_action.toggled.connect(widget.set_always_on_top)
 
     login_action = menu.addAction("Start on login")
     login_action.setCheckable(True)
