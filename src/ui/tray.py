@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import Optional
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -91,15 +90,6 @@ def build_app_menu(widget: AIUsageWidget, toggle_cb, parent: Optional[QtWidgets.
 
     mini_action = menu.addAction("Expand from compact strip" if widget.view_mode == "mini" else "Minimize to compact strip")
     mini_action.triggered.connect(widget.toggle_mini_mode)
-
-    wallpaper_action = menu.addAction("Wallpaper mode (experimental)")
-    wallpaper_action.setCheckable(True)
-    wallpaper_action.setChecked(widget._wallpaper_mode.active)
-    wallpaper_action.setEnabled(sys.platform == "win32")
-    wallpaper_action.setToolTip("Attach behind desktop icons; Explorer updates may end the mode.")
-    wallpaper_action.toggled.connect(
-        lambda checked: widget.toggle_wallpaper_mode() if checked != widget._wallpaper_mode.active else None
-    )
 
     menu.addAction("Toggle Used / Remaining %").triggered.connect(widget.toggle_style)
 

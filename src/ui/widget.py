@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import sys
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -23,7 +22,6 @@ from src.config import WidgetSettings
 from src.insights import InsightEngine, best_provider, PROVIDER_LABELS
 from src.models import ActiveSession, AggregatedUsage, ProviderUsage, UsageWindow, format_reset_label
 from src.ui.styles import ProviderTheme, UITheme
-from src.ui.wallpaper import WindowsWallpaperMode
 
 
 @dataclass
@@ -55,8 +53,6 @@ class AIUsageWidget(QtWidgets.QWidget):
         self.usage: AggregatedUsage = self.aggregator.get_latest()
         self._data_signal.connect(self._apply_new_data, Qt.ConnectionType.QueuedConnection)
         self._refresh_done_signal.connect(self._finish_manual_refresh, Qt.ConnectionType.QueuedConnection)
-        self._wallpaper_mode = WindowsWallpaperMode()
-
         # Frameless always-on-top window
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -64,7 +60,6 @@ class AIUsageWidget(QtWidgets.QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
-        self.createWinId()
 
         # Modes: "rings" (compact bottom card in image.png) vs "bars" (detailed top card in image.png)
         if self.settings.view_mode in ("bars", "rings", "mini"):
@@ -94,9 +89,6 @@ class AIUsageWidget(QtWidgets.QWidget):
         self.tick_timer = QTimer(self)
         self.tick_timer.timeout.connect(self._on_tick)
         self.tick_timer.start(1000)
-
-        self._wallpaper_watch_timer = QTimer(self)
-        self._wallpaper_watch_timer.timeout.connect(self._check_wallpaper_host)
 
     def _set_opacity(self, opacity: float) -> None:
         """Safely apply opacity without triggering Wayland plugin errors on Linux/WSL."""
@@ -238,35 +230,8 @@ class AIUsageWidget(QtWidgets.QWidget):
     def set_always_on_top(self, enabled: bool) -> None:
         self.settings.always_on_top = enabled
         self.settings.save()
-        if not self._wallpaper_mode.active:
-            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, enabled)
-            self.show()
-
-    def toggle_wallpaper_mode(self) -> None:
-        if self._wallpaper_mode.active:
-            ok, message = self._wallpaper_mode.disable(self.settings.always_on_top)
-            if not self._wallpaper_mode.active:
-                self._wallpaper_watch_timer.stop()
-                if ok:
-                    self.move(self.settings.pos_x, self.settings.pos_y)
-        else:
-            ok, message = self._wallpaper_mode.enable(int(self.winId()))
-            if ok:
-                self._wallpaper_watch_timer.start(3000)
-        if message:
-            QtWidgets.QMessageBox.warning(self, "Wallpaper mode", message)
-        self.update()
-
-    def _check_wallpaper_host(self) -> None:
-        if self._wallpaper_mode.active and not self._wallpaper_mode.host_is_alive():
-            ok, _ = self._wallpaper_mode.disable(self.settings.always_on_top)
-            if not ok and self._wallpaper_mode.active:
-                return
-            self._wallpaper_watch_timer.stop()
-            self.move(self.settings.pos_x, self.settings.pos_y)
-            if self.alert_callback:
-                self.alert_callback("Wallpaper mode ended", "The Windows desktop host changed; the widget returned to normal mode.")
-            self.update()
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, enabled)
+        self.show()
 
     def toggle_style(self) -> None:
         """Switch between 'remaining' and 'used' presentation."""
@@ -409,11 +374,6 @@ class AIUsageWidget(QtWidgets.QWidget):
                     event.accept()
                     return
 
-            # Keep the desktop-attached widget in place; right-click can always exit the mode.
-            if self._wallpaper_mode.active:
-                event.accept()
-                return
-
             # Start native Wayland / Windows system move
             handle = self.windowHandle()
             if handle and hasattr(handle, "startSystemMove") and handle.startSystemMove():
@@ -442,8 +402,6 @@ class AIUsageWidget(QtWidgets.QWidget):
         )
         if is_clickable:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
-        elif self._wallpaper_mode.active:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
         else:
             self.setCursor(Qt.CursorShape.SizeAllCursor)
 
@@ -487,10 +445,9 @@ class AIUsageWidget(QtWidgets.QWidget):
 
     def moveEvent(self, event: QtGui.QMoveEvent) -> None:
         super().moveEvent(event)
-        if not self._wallpaper_mode.active:
-            self.settings.pos_x = self.x()
-            self.settings.pos_y = self.y()
-            self.settings.save()
+        self.settings.pos_x = self.x()
+        self.settings.pos_y = self.y()
+        self.settings.save()
 
     def _show_context_menu(self, global_pos: QPoint) -> None:
         menu = QtWidgets.QMenu(self)
@@ -520,13 +477,6 @@ class AIUsageWidget(QtWidgets.QWidget):
 
         mini_action = menu.addAction("Expand from compact strip" if self.view_mode == "mini" else "Minimize to compact strip")
         mini_action.triggered.connect(self.toggle_mini_mode)
-
-        wallpaper_action = menu.addAction("Wallpaper mode (experimental)")
-        wallpaper_action.setCheckable(True)
-        wallpaper_action.setChecked(self._wallpaper_mode.active)
-        wallpaper_action.setEnabled(sys.platform == "win32")
-        wallpaper_action.setToolTip("Attach behind desktop icons; Explorer updates may end the mode.")
-        wallpaper_action.toggled.connect(lambda checked: self.toggle_wallpaper_mode() if checked != self._wallpaper_mode.active else None)
 
         style_action = menu.addAction("Show Used % instead" if not self.settings.show_used else "Show Remaining % instead")
         style_action.triggered.connect(self.toggle_style)
