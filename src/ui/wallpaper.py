@@ -111,7 +111,16 @@ class WindowsWallpaperMode:
             return True
 
         u.EnumWindows(callback_type(visit), 0)
-        return int(found.value or 0)
+        if found.value:
+            return int(found.value)
+
+        # Recent Windows 11 builds expose the wallpaper WorkerW as a child
+        # of Progman rather than as a top-level sibling of the icon view.
+        if progman:
+            worker = u.FindWindowExW(progman, None, "WorkerW", None)
+            if worker:
+                return int(worker)
+        return 0
 
     def enable(self, hwnd: int) -> tuple[bool, str]:
         if sys.platform != "win32" or self._user32 is None:
