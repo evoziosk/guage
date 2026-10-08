@@ -1228,8 +1228,6 @@ class AIUsageWidget(QtWidgets.QWidget):
         else:
             series = [(self.active_provider, theme.accent_color)]
 
-        now = time.time()
-        span = 24 * 3600.0
         drew = False
         for pid, color in series:
             pts = history.series(pid, "s", 24.0)
@@ -1237,8 +1235,10 @@ class AIUsageWidget(QtWidgets.QWidget):
                 continue
             drew = True
             path = QPainterPath()
+            first_t = pts[0][0]
+            time_range = max(pts[-1][0] - first_t, 1.0)
             for i, (t, rem) in enumerate(pts):
-                x = x0 + width * (1.0 - (now - t) / span)
+                x = x0 + width * ((t - first_t) / time_range)
                 val = self._disp(rem)
                 y = top + height * (1.0 - val / 100.0)
                 if i == 0:
