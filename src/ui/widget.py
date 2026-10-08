@@ -1202,31 +1202,65 @@ class AIUsageWidget(QtWidgets.QWidget):
         if history is None:
             return
 
-        label = "24h trend"
-        if self.active_provider in ("claude", "codex") and stats is not None and hasattr(stats, "summary"):
-            extra = stats.summary(self.active_provider)
-            if extra:
-                label = f"{extra}  |  24h trend"
+        trend_colors = {
+            "claude": QColor(103, 232, 249),       # Cyan
+            "codex": QColor(196, 181, 253),        # Lavender
+            "antigravity": QColor(252, 211, 77),   # Gold
+            "opencode": QColor(249, 168, 212),     # Rose
+        }
+        if self.active_provider == "all":
+            series = [
+                ("claude", trend_colors["claude"]),
+                ("codex", trend_colors["codex"]),
+                ("antigravity", trend_colors["antigravity"]),
+            ]
+            if "opencode" in self.usage.providers and self.usage.providers["opencode"].available:
+                series.append(("opencode", trend_colors["opencode"]))
+        else:
+            series = [(self.active_provider, trend_colors.get(self.active_provider, theme.accent_color))]
 
         p.setFont(QFont("Segoe UI", 7.5))
         p.setPen(QPen(theme.text_dim))
-        p.drawText(layout.trend_label_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, label)
+        p.drawText(
+            layout.trend_label_rect,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            "Quota remaining · higher = more · 24h",
+        )
+
+        # Keep the legend beside the label so each distinct trend color has a clear provider.
+        p.setFont(QFont("Segoe UI", 6.5))
+        metrics = QtGui.QFontMetricsF(p.font())
+        if self.active_provider == "all":
+            legend_items = [(pid, PROVIDER_LABELS.get(pid, pid.title()), color) for pid, color in series]
+            legend_width = sum(metrics.horizontalAdvance(name) + 20.0 for _, name, _ in legend_items) + max(0, len(legend_items) - 1) * 6.0
+            legend_x = layout.trend_label_rect.right() - legend_width
+            for index, (_, name, color) in enumerate(legend_items):
+                center_y = layout.trend_label_rect.center().y()
+                p.setPen(QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                p.drawLine(QPointF(legend_x, center_y), QPointF(legend_x + 7.0, center_y))
+                p.setPen(QPen(theme.text_muted))
+                p.drawText(
+                    QRectF(legend_x + 10.0, layout.trend_label_rect.top(), metrics.horizontalAdvance(name) + 2.0, layout.trend_label_rect.height()),
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    name,
+                )
+                legend_x += metrics.horizontalAdvance(name) + 20.0
+                if index < len(legend_items) - 1:
+                    legend_x += 6.0
+        elif self.active_provider in ("claude", "codex") and stats is not None and hasattr(stats, "summary"):
+            extra = stats.summary(self.active_provider)
+            if extra:
+                p.setPen(QPen(theme.text_muted))
+                p.drawText(
+                    layout.trend_label_rect,
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                    extra,
+                )
 
         top = layout.sparkline_rect.top()
         height = layout.sparkline_rect.height()
         x0 = layout.sparkline_rect.left()
         width = layout.sparkline_rect.width()
-
-        if self.active_provider == "all":
-            series = [
-                ("claude", UITheme.CLAUDE_PRIMARY),
-                ("codex", UITheme.CODEX_PRIMARY),
-                ("antigravity", UITheme.ANTIGRAVITY_PRIMARY),
-            ]
-            if "opencode" in self.usage.providers and self.usage.providers["opencode"].available:
-                series.append(("opencode", UITheme.OPENCODE_PRIMARY))
-        else:
-            series = [(self.active_provider, theme.accent_color)]
 
         drew = False
         for pid, color in series:
