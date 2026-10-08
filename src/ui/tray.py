@@ -88,6 +88,9 @@ def build_app_menu(widget: AIUsageWidget, toggle_cb, parent: Optional[QtWidgets.
         act = v_menu.addAction(label)
         act.triggered.connect(lambda checked=False, m=mode: widget.set_view_mode(m))
 
+    mini_action = menu.addAction("Expand from compact strip" if widget.view_mode == "mini" else "Minimize to compact strip")
+    mini_action.triggered.connect(widget.toggle_mini_mode)
+
     menu.addAction("Toggle Used / Remaining %").triggered.connect(widget.toggle_style)
 
     # Active Sessions submenu
@@ -121,13 +124,7 @@ def build_app_menu(widget: AIUsageWidget, toggle_cb, parent: Optional[QtWidgets.
     top_action.setCheckable(True)
     top_action.setChecked(widget.settings.always_on_top)
 
-    def _toggle_top():
-        widget.settings.always_on_top = not widget.settings.always_on_top
-        widget.settings.save()
-        widget.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, widget.settings.always_on_top)
-        widget.show()
-
-    top_action.triggered.connect(_toggle_top)
+    top_action.toggled.connect(widget.set_always_on_top)
 
     login_action = menu.addAction("Start on login")
     login_action.setCheckable(True)
