@@ -35,8 +35,9 @@ def test_claude_collector_parsing(tmp_path):
     with patch("src.collectors.claude.get_cache_dir", return_value=tmp_path):
         with patch.object(collector, "find_credentials", return_value={"accessToken": "test-token", "subscriptionType": "Pro"}):
             with patch.object(collector, "find_account_info", return_value=("dev@example.com", "Dev User")):
-                with patch.object(collector, "fetch_api", return_value=sample_api_response):
-                    usage = collector.collect(force=True)
+                with patch.object(collector, "get_local_quota_limits", return_value=None):
+                    with patch.object(collector, "fetch_api", return_value=sample_api_response):
+                        usage = collector.collect(force=True)
 
     assert usage.available is True
     assert usage.display_name == "Claude Code (dev)"
@@ -95,8 +96,9 @@ def test_claude_rate_limit_with_cached_data(tmp_path):
 
     with patch("src.collectors.claude.get_cache_dir", return_value=tmp_path):
         with patch.object(collector, "find_credentials", return_value={"accessToken": "test-token", "subscriptionType": "Pro"}):
-            with patch.object(collector, "fetch_api", return_value={"error": "Rate limited by Anthropic API", "rate_limited": True}):
-                usage = collector.collect(force=True)
+            with patch.object(collector, "get_local_quota_limits", return_value=None):
+                with patch.object(collector, "fetch_api", return_value={"error": "Rate limited by Anthropic API", "rate_limited": True}):
+                    usage = collector.collect(force=True)
 
     assert usage.available is True
     assert usage.primary_window is not None

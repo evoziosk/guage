@@ -60,18 +60,26 @@ def create_tray_icon(lowest_pct: Optional[float] = None) -> QIcon:
 
 MENU_STYLE = """
     QMenu {
-        background-color: #1a1c23;
-        color: #e0e0e0;
-        border: 1px solid #333644;
+        background-color: #111215;
+        color: #fafafa;
+        border: 1px solid #27272a;
         border-radius: 8px;
         padding: 4px;
+        font-family: "JetBrains Mono", "SF Mono", monospace, sans-serif;
+        font-size: 11px;
     }
     QMenu::item {
-        padding: 6px 24px;
+        padding: 6px 20px;
         border-radius: 4px;
     }
     QMenu::item:selected {
-        background-color: #2a2e3d;
+        background-color: #27272a;
+        color: #ffffff;
+    }
+    QMenu::separator {
+        height: 1px;
+        background-color: #27272a;
+        margin: 4px 6px;
     }
 """
 
