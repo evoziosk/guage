@@ -58,8 +58,8 @@ class UITheme:
     PILL_WIDTH = 460
     CARD_HEIGHT_BARS = 410                     # Height for top list design in image.png
     CARD_HEIGHT_RINGS = 250                    # Height for bottom circular rings design
-    CARD_HEIGHT_MINI = 176                     # One compact line per provider
-    CORNER_RADIUS = 28                         # 28px rounded corners from image.png
+    CARD_HEIGHT_MINI = 72                      # Shallow single-provider strip
+    CORNER_RADIUS = 7                          # Slightly rounded card corners
 
     # Default / TokenEater Fallbacks
     BG_CARD = QColor(18, 19, 22, 252)
